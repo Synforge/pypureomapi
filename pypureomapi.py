@@ -301,6 +301,18 @@ class OmapiMessage:
 		self.generate_tid()
 		return self
 
+	@classmethod
+	def update(cls, handle):
+		"""Create an OMAPI update message for given handle.
+		@type handle: int
+		@rtype: OmapiMessage
+		"""
+		self = cls()
+		self.opcode = OMAPI_OP_UPDATE
+		self.handle = handle
+		self.generate_tid()
+		return self
+
 	def is_response(self, other):
 		"""Check whether this OMAPI message is a response to the given
 		OMAPI message.
@@ -464,7 +476,7 @@ def pack_ip(ipstr):
 	@rtype: str
 	@raises ValueError: for badly formatted ip addresses
 	"""
-	if not isinstance(ipstr, str):
+	if not isinstance(ipstr, basestring):
 		raise ValueError("given ip address is not a string")
 	parts = ipstr.split('.')
 	if len(parts) != 4:
@@ -488,7 +500,7 @@ def unpack_ip(fourbytes):
 	@rtype: str
 	@raises ValueError: for bad input
 	"""
-	if not isinstance(fourbytes, str):
+	if not isinstance(fourbytes, basestring):
 		raise ValueError("given buffer is not a string")
 	if len(fourbytes) != 4:
 		raise ValueError("given buffer is not exactly four bytes long")
@@ -510,7 +522,7 @@ def pack_mac(macstr):
 	@rtype: str
 	@raises ValueError: for badly formatted mac addresses
 	"""
-	if not isinstance(macstr, str):
+	if not isinstance(macstr, basestring):
 		raise ValueError("given mac addresses is not a string")
 	parts = macstr.split(":")
 	if len(parts) != 6:
@@ -534,7 +546,7 @@ def unpack_mac(sixbytes):
 	@rtype: str
 	@raises ValueError: for bad input
 	"""
-	if not isinstance(sixbytes, str):
+	if not isinstance(sixbytes, basestring):
 		raise ValueError("given buffer is not a string")
 	if len(sixbytes) != 6:
 		raise ValueError("given buffer is not exactly six bytes long")
@@ -734,6 +746,7 @@ class Omapi:
 		"""
 		@type ip: str
 		@type mac: str
+		@type name: str
 		@raises ValueError:
 		@raises OmapiError:
 		@raises socket.error:
@@ -744,9 +757,37 @@ class Omapi:
 		msg.obj.append(("hardware-address", pack_mac(mac)))
 		msg.obj.append(("hardware-type", struct.pack("!I", 1)))
 		msg.obj.append(("ip-address", pack_ip(ip)))
+
 		response = self.query_server(msg)
 		if response.opcode != OMAPI_OP_UPDATE:
 			raise OmapiError("add failed")
+
+	def update_host(self, mac, ip):
+		"""
+		@type mac: str
+		@type ip: str
+		@type name: str
+		@raises ValueError:
+		@raises OmapiError:
+		@raises socket.error:
+		"""
+		msg = OmapiMessage.open("host")
+		msg.obj.append(("hardware-address", pack_mac(mac)))
+
+		response = self.query_server(msg)
+
+		if response.opcode != OMAPI_OP_UPDATE:
+			# This host does not exist
+			return self.add_host(ip, mac)
+
+		update = OmapiMessage.update(response.handle)
+
+		update.obj = [('ip-address', pack_ip(ip))]
+
+		response = self.query_server(update)
+
+		if response.opcode != OMAPI_OP_STATUS:
+			raise OmapiError('Could not update host with mac: ' + mac)
 
 	def del_host(self, mac):
 		"""
